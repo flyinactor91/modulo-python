@@ -9,7 +9,7 @@ from setuptools import setup
 # See http://peterdowns.com/posts/first-time-with-pypi.html for more pypi info
 
 setup(name='modulo-python',
-    version='0.5',
+    version='1.1',
     description='Python support for Modulo hardware',
     url='https://github.com/integer-labs/modulo-python',
     download_url = 'https://github.com/integer-labs/modulo-python/tarball/0.1',
@@ -18,9 +18,9 @@ setup(name='modulo-python',
     packages=['modulo'],
     entry_points={
         'console_scripts': [
-            'modulo-list = modulo.scripts:list',
-            'modulo-identify = modulo.scripts:identify'
+            'modulo-list=modulo.scripts:list'
         ]
-    }
+    },
+    install_requires=['pyserial']
     )
 

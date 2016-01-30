@@ -24,7 +24,12 @@ class Port(object) :
     _BroadcastCommandExitBootloader = 100
 
     _CodeEvent = ord('V')
-    
+    _CodeEcho = ord('X')
+
+    _StatusOff = 0
+    _StatusOn = 1
+    _StatusBlinking = 2
+
     def __init__(self, serialPortPath=None) :
         self._portInitialized = False
         self._lastAssignedAddress = 9
@@ -59,24 +64,30 @@ class Port(object) :
         for m in self._modulos :
             m.getAddress()
 
+        gotPacket = False
         packet = self._connection.getNextPacket(noWait)
-        if (packet == None) :
-            return False
-        if (packet[0] == self._CodeEvent) :
-            event = packet[1:]
+        while packet :
+            gotPacket = True
+            if (packet[0] == self._CodeEvent) :
+                event = packet[1:]
 
-            eventCode = event[0]
-            deviceID = event[1] | (event[2] << 8)
-            eventData = event[3] | (event[4] << 8)
+                eventCode = event[0]
+                deviceID = event[1] | (event[2] << 8)
+                eventData = event[3] | (event[4] << 8)
 
-            
-            m = self._findModuloByID(deviceID)
-            if m :
-                m._processEvent(eventCode, eventData)
-        else :
-            print('Packet: ', packet)
+                
+                m = self._findModuloByID(deviceID)
+                if m :
+                    m._processEvent(eventCode, eventData)
+            elif (packet[0] != self._CodeEcho) :
+                # Discard echo packet if it's received out of band
+                # No other type of packet should be received.
+                print('Invalid out of band packet: ', packet)
 
-        return True
+            # Never wait when checking to see if there are additional packets
+            packet = self._connection.getNextPacket(noWait=True)
+
+        return gotPacket
 
     def _globalReset(self) :
         """Reset all modulos to their initial state"""
@@ -144,7 +155,7 @@ class Port(object) :
         sendData = [deviceID & 0xFF, deviceID >> 8]
         retval = self._connection.transfer(self._BroadcastAddress, self._BroadcastCommandGetVersion,
             sendData, 2)
-        if retval is None :
+        if not retval :
             return None
         return retval[0] | (retval[1] << 8)
 
@@ -174,7 +185,7 @@ class SerialConnection(object) :
             # Modulo Controller will contain in the hardware description:
             #    "16d0:a67" on OSX
             #    "16D0:0A67" on Windows 71
-            for port in list_ports.grep("16d0:0?b58") :
+            for port in self._grepPorts("16d0:0?b58") :
                 if (controller == 0) :
                     path = port[0]
                     break
@@ -193,6 +204,17 @@ class SerialConnection(object) :
         # reliable.
         while not self.getNextPacket() :
             self.sendPacket([self._CodeEcho])
+
+    def _grepPorts(self, regexp) :
+        """This is a copy of serial.list_ports.grep that has been modified to
+           work around an error that occurs on OSX 10.10.5, where the desc
+           field is None which causes the grep to fail"""
+        import re
+        from serial.tools import list_ports
+        r = re.compile(regexp, re.I)
+        for port, desc, hwid in list_ports.comports() :
+            if r.search(hwid) :
+                yield port, desc, hwid
 
     def sendPacket(self, data) :
     

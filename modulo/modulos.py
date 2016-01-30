@@ -1,6 +1,13 @@
 from __future__ import print_function, division, absolute_import, unicode_literals
 import ctypes, ctypes.util
-import numpy, time
+import time
+
+def _clip(x, min, max) :
+    if x < min :
+        return min
+    if x > max :
+        return max
+    return x
 
 class ModuloBase(object) :
     """
@@ -15,7 +22,7 @@ class ModuloBase(object) :
         self._deviceType = deviceType
         self._deviceID = deviceID
         self._address = None
-        
+
         self._port._modulos.append(self)
 
     def __del__(self) :
@@ -39,7 +46,7 @@ class ModuloBase(object) :
         """Return the device ID or None if no modulo was found"""
         self._init()
         return self._deviceID
-    
+
     def setDeviceID(self, deviceID) :
         """Set the ID of the modulo that this object should connect to"""
         if (deviceID != self._deviceID) :
@@ -55,7 +62,7 @@ class ModuloBase(object) :
         if self._disconnected :
             if self.getAddress() != None :
                 self._disconnected = False
-    
+
     def _init(self) :
         if self._address is not None :
             return False
@@ -64,14 +71,14 @@ class ModuloBase(object) :
             deviceID = self._port._getNextDeviceID(0)
             while (deviceID is not None) :
                 m = self._port._findModuloByID(deviceID)
-                
+
                 if m is None :
                     if (self._port._getDeviceType(deviceID) == self._deviceType) :
                         self._deviceID = deviceID
                         break
 
                 deviceID = self._port._getNextDeviceID(deviceID)
-        
+
         if self._deviceID is None :
             return False
 
@@ -105,18 +112,39 @@ class Knob(ModuloBase) :
         self._position = 0
 
         self.buttonPressCallback = None
-        """Function to be called when the knob is pressed"""
+        """ A function that will be called when the knob is pressed.
+
+            The first argument to the function is the knob object that's
+            receiving the event. ie::
+
+                def onKnobPressed(knob) :
+                   ...
+        """
 
         self.buttonReleaseCallback = None
-        """Function to be called when the knob is released"""
+        """ A function that will be called when the knob is released.
+
+            The first argument to the function is the knob object that's
+            receiving the event. ie::
+
+                def onKnobReleased(knob) :
+                   ...
+        """
 
         self.positionChangeCallback = None
-        """Function to be called when the knob position changes"""
+        """ A function that will be called when the knob's position changes.
+
+            The first argument to the function is the knob object that's
+            receiving the event. ie::
+
+                def onKnobTurned(knob) :
+                   ...
+        """
 
     def setColor(self, red, green, blue) :
         """Set the color of the knob's LED. *red*, *green*, and *blue* should be
         between 0 and 1"""
-        
+
         sendData = [int(red*255), int(green*255), int(blue*255)]
         self.transfer(self._FunctionSetColor, sendData, 0)
 
@@ -149,7 +177,7 @@ class Knob(ModuloBase) :
         receivedData = self.transfer(self._FunctionGetPosition, [], 2)
         if receivedData is not None :
             self._position = ctypes.c_short(receivedData[0] | (receivedData[1] << 8)).value
-        
+
         receivedData = self.transfer(self._FunctionGetButton, [], 1)
         if receivedData is not None :
             self._button = bool(receivedData[0])
@@ -163,11 +191,11 @@ class Knob(ModuloBase) :
             self._buttonState = self._buttonState and not buttonReleased
 
             if buttonPressed and self.buttonPressCallback :
-                self._buttonPressCallback(self)
+                self.buttonPressCallback(self)
 
             if buttonReleased and self.buttonReleaseCallback :
                 self.buttonReleaseCallback(self)
-        
+
         if eventCode == self._EventPositionChanged :
             # Convert from 16 bit unsigned to 16 bit signed
             self._position = ctypes.c_short(eventData).value
@@ -179,7 +207,7 @@ class Joystick(ModuloBase):
     """
     Connect to the module with the specified *deviceID* on the given *port*.
     If *deviceID* isn't specified, finds the first unused KnobModule.
-    """ 
+    """
 
     _FUNCTION_GET_BUTTON=0
     _FUNCTION_GET_POSITION=1
@@ -195,13 +223,34 @@ class Joystick(ModuloBase):
         self._vPos = 128
 
         self.buttonPressCallback = None
-        """Function to be called when the joystick is pressed"""
+        """ A function that will be called when the joystick is pressed.
+
+            The first argument to the function is the joystick object that's
+            receiving the event. ie::
+
+                def onJoystickPressed(joystick) :
+                   ...
+        """
 
         self.buttonReleaseCallback = None
-        """Function to be called when the joystick is released"""
+        """ A function that will be called when the joystick is released.
+
+            The first argument to the function is the joystick object that's
+            receiving the event. ie::
+
+                def onJoystickReleased(joystick) :
+                   ...
+        """
 
         self.positionChangeCallback = None
-        """Function to be called when the position changes"""
+        """ A function that will be called when the joystick position changes.
+
+            The first argument to the function is the joystick object that's
+            receiving the event. ie::
+
+                def onJoystickMoved(joystick) :
+                   ...
+        """
 
     def getButton(self) :
         """Return wehther the joystick is currently pressed"""
@@ -248,11 +297,11 @@ class Joystick(ModuloBase):
 
             if self.buttonReleaseCallback :
                 self.buttonReleaseCallback(self)
-        
+
         if eventCode == self._EVENT_POSITION_CHANGED :
             self._hPos = (eventData >> 8)
             self._vPos = (eventData & 0xFF)
-            
+
             if self.positionChangeCallback :
                 self.positionChangeCallback(self)
 
@@ -264,7 +313,14 @@ class TemperatureProbe(ModuloBase) :
     def __init__(self, port, deviceID = None) :
         super(TemperatureProbe, self).__init__(port, "co.modulo.tempprobe", deviceID)
         self.isValid = False
-        """Whether the temperature reading is currently valid"""
+        """ A function that will be called when the probe's temperature changes.
+
+            The first argument to the function is the temperature probe
+            that's receiving the event. ie::
+
+                def onTemperatureChanged(temperatureProbe) :
+                   ...
+        """
 
         self.temperatureChangeCallback = None
         """Function to be called when the temperature changes"""
@@ -285,19 +341,19 @@ class TemperatureProbe(ModuloBase) :
 
             received = self.transfer(self._FunctionGetTemperature, [], 2)
             if not received:
-                self._isValid = False
+                self.isValid = False
                 return None
-        
-            self._isValid = True
+
+            self.isValid = True
             self._temp = ctypes.c_short(received[0] | (received[1] << 8)).value
-        
+
             if self.temperatureChangeCallback :
                 self.temperatureChangeCallback(self)
 
     def _processEvent(self, eventCode, eventData) :
         if eventCode == self._EventTemperatuteChanged :
             self._temp = eventData
-            self._isValid = True
+            self.isValid = True
 
             if self.temperatureChangeCallback :
                 self.temperatureChangeCallback(self)
@@ -305,6 +361,14 @@ class TemperatureProbe(ModuloBase) :
 
 
 class IRRemote(ModuloBase) :
+    """
+    Infrared remote control transmitter and receiver
+
+    Note: this class can send and receive raw IR data as a sequence of pulse
+    lengths, but support for encoding and decoding those pulse lengths into
+    useful codes is not quite complete. Full encoding/decoding will be implemented
+    soon. Please check community.modulo.co for more information on the status
+    of this feature."""
 
     _FUNCTION_RECEIVE = 0
     _FUNCTION_GET_READ_SIZE = 1
@@ -318,16 +382,16 @@ class IRRemote(ModuloBase) :
 
     def __init__(self, port, deviceID = None) :
         super(IRRemote, self).__init__(port, "co.modulo.ir", deviceID)
-        
+
     def setBreakLength(self, l) :
         """Set the no signal time that's required before the receiver considers
             a transmission complete."""
         self.transfer(self._FUNCTION_SET_BREAK_LENGTH, [len & 0xFF, len >> 8])
-    
+
     def _processEvent(self, eventCode, eventData) :
         print('Process Event')
         availBytes = eventData
-    
+
         data = []
         i = 0
         while (i < availBytes) :
@@ -335,7 +399,7 @@ class IRRemote(ModuloBase) :
             i += 16
 
         self.transfer(self._FUNCTION_CLEAR_READ, [], 0)
-        
+
         print('IR DATA:', data)
 
 
@@ -385,23 +449,23 @@ class BlankSlate(ModuloBase) :
         result = self.transfer(self._FUNCTION_GET_DIGITAL_INPUT, [pin], 1)
         if result is not None :
             return result[0]
-    
+
     def getDigitalInputs(self) :
         """Reads the digital inputs from all 8 pins. Does not enable/disable outputs on any pins."""
         result = self.transfer(self._FUNCTION_GET_DIGITAL_INPUTS, [], 1)
         if result is not None :
             return result[0]
-    
+
     def getAnalogInput(self, pin) :
         """Disables the output on the specified pin and performs an analog read."""
         result = self.transfer(self._FUNCTION_GET_ANALOG_INPUT, [pin, 0], 2)
         if result is not None :
             return (result[0] | (result[1] << 8))/1023.0
-    
+
     def setDirection(self, pin, output) :
         """Sets the pin direction to either output or input"""
         self.transfer(self._FUNCTION_SET_DATA_DIRECTION, [pin, output], 0)
-    
+
     def setDirections(self, outputs) :
         """Sets the pin directions for all 8 pins simultaneously"""
         self.transfer(self._FUNCTION_SET_DATA_DIRECTIONS, [outputs], 0)
@@ -426,7 +490,7 @@ class BlankSlate(ModuloBase) :
 
         v = int(65535*value)
         sendData = [pin, v & 0xFF, v >> 8]
-    
+
         self.transfer(self._FUNCTION_SET_PWM_OUTPUT, sendData, 0)
 
     def setPullup(self, pin, enable) :
@@ -440,7 +504,7 @@ class BlankSlate(ModuloBase) :
     def setPWMFrequency(self, pin, value) :
         """Set the frequency for PWM signals on the specified pin."""
         sendData = [pin, value & 0xFF, value >> 8]
-    
+
         self.transfer(self._FUNCTION_SET_PWM_FREQUENCY, sendData, 0)
 
 
@@ -464,38 +528,53 @@ class MotorDriver(ModuloBase) :
 
     def __init__(self, port, deviceID = None) :
         super(MotorDriver, self).__init__(port, "co.modulo.motor", deviceID)
-    
+
         self.positionReachedCallback = None
-        """Function to be called when the stepper target position is reached"""
+        """ A function that will be called when the stepper target position is
+            reached.
+
+            The first argument to the function is the MotorDriver object that's
+            receiving the event. ie::
+
+                def onPositionReached(motorDriver) :
+                   ...
+        """
 
         self.faultChangedCallback = None
-        """Function to be called when a fault state changes"""
-        
+        """ A function that will be called when the fault status changes.
+
+            The first argument to the function is the MotorDriver object that's
+            receiving the event. ie::
+
+                def onFaultChanged(motorDriver) :
+                   ...
+        """
+
         self._fault = False
         self._stepperOffset = 0
         self._usPerStep = 5000
         self._microsteps = 256
         self._minMicrostepDuration = 1000
-        
-    
+
+
     def setChannel(self, channel, amount) :
         """Set a single channel (0-3) to the specified amount, between 0 and 1.
            Changes the mode to ModeDC if it's not already."""
-        intValue = int(numpy.clip(amount, 0, 1)*0xFFFF)
+        intValue = int(_clip(amount, 0, 1)*0xFFFF)
         data = [channel, intValue & 0xFF, intValue >> 8]
         self.transfer(self._FunctionSetValue, data, 0)
-    
+
     def _setMotor(self, side, value) :
         """Sets the motor output for a side (A=0,B=2) to a specified value.
            Includes a -1<=x<=1 check on value to prevent silent failure."""
-        value = numpy.clip(value, -1, 1)
+        value = _clip(value, -1, 1)
         if value > 0 :
             self.setChannel(side, 1)
             self.setChannel(side+1, 1-value)
         else :
             self.setChannel(side, 1+value)
             self.setChannel(side+1, 1)
-    
+
     def setMotorA(self, value) :
         """Set the motor output A to the specified amount, between -1 and 1.
            Changes the mode to ModeDC if it's not already."""
@@ -512,7 +591,7 @@ class MotorDriver(ModuloBase) :
 
     def setCurrentLimit(self, limit) :
         """Set the driver current limit (between 0 and 1)."""
-        data = [int(numpy.clip(limit, 0, 1)*63)]
+        data = [int(_clip(limit, 0, 1)*63)]
         self.transfer(self._FunctionSetCurrentLimit, data, 0)
 
     def setPWMFrequency(self, freq) :
@@ -532,7 +611,7 @@ class MotorDriver(ModuloBase) :
     def setStepperResolution(self, microsteps, minMicrostepDuration=1000) :
         """Set the number of microsteps to take between each whole step.
             It can be 1, 2, 4, 8, 16, 32, 64, 128, or 256.
- 
+
             If the duration of a microstep (in microseconds) would be less than
             minMicrostepDuration, then the number of microsteps is decreased
             automatically. This helps to avoid skipping steps when the rate is
@@ -550,7 +629,7 @@ class MotorDriver(ModuloBase) :
         data = [targetPos & 0xFF,
                 (targetPos >> 8) & 0xFF,
                 (targetPos >> 16) & 0xFF,
-                (targetPos >> 24) & 0xFF]            
+                (targetPos >> 24) & 0xFF]
 
         self.transfer(self._FunctionSetStepperTarget, data, 0)
 
@@ -571,21 +650,26 @@ class MotorDriver(ModuloBase) :
         return self._fault
 
     def _updateStepperSpeed(self) :
+        # Find the actual number of microsteps to use. If the duration of a
+        # microstep would be less than _minMicrostepDuration, then this will
+        # be less than the requested number of microsteps.
         microsteps = self._microsteps
 
         if microsteps > 256 :
             microsteps = 256
 
         while (microsteps > 1 and self._usPerStep/microsteps < self._minMicrostepDuration) :
-            microsteps /= 2
+            microsteps //= 2
 
+        # Now determine the microstep resolution, which is log2(microsteps)
         resolution = 0
         i = microsteps/2
         while i > 0 and resolution <= 8 :
             resolution += 1
-            i /= 2
+            i //= 2
 
-        ticksPerMicrostep = numpy.clip(self._usPerStep, 0, 65535)
+        # Determine the number of 8us ticks per microstep
+        ticksPerMicrostep = _clip(self._usPerStep//(8*microsteps), 0, 65535)
 
         sendData = [ticksPerMicrostep & 0xFF, ticksPerMicrostep >> 8, resolution]
         self.transfer(self._FunctionSetStepperSpeed, sendData, 0)
@@ -604,7 +688,7 @@ class MotorDriver(ModuloBase) :
                 self._fault = False
                 if self.faultChangedCallback :
                     self.faultChangedCallback(self)
-    
+
 
 class Display(ModuloBase) :
     """
@@ -649,10 +733,24 @@ class Display(ModuloBase) :
         """The height of the display in pixels"""
 
         self.buttonPressCallback = None
-        """The function to call when a button is pressed"""
+        """ A function that will be called when a button is pressed.
+
+            The first argument to the function is the display object that's
+            receiving the event. The second argument is the button number (0, 1, or 2) ie::
+
+                def onButtonPressed(display, button) :
+                   ...
+        """
 
         self.buttonReleaseCallback = None
-        """The function to call when a button is released"""
+        """ A function that will be called when a button is released.
+
+            The first argument to the function is the display object that's
+            receiving the event. The second argument is the button number (0, 1, or 2) ie::
+
+                def onButtonReleased(display, button) :
+                   ...
+        """
 
         self._currentOp = -1
         self._opBuffer = bytearray(self._OP_BUFFER_SIZE)
@@ -673,7 +771,7 @@ class Display(ModuloBase) :
 
         self._availableSpace -= len(data)
 
-        self.transfer(self._FUNCTION_APPEND_OP, data, 0)
+        self.transfer(self._FUNCTION_APPEND_OP, [int(x) for x in data], 0)
 
     def _beginOp(self, opCode) :
         if opCode == self._currentOp :
@@ -684,16 +782,17 @@ class Display(ModuloBase) :
         self._opBuffer[0] = opCode
 
     def _appendToOp(self, data) :
-        self._opBuffer[self._opBufferLen] = ord(data)
+        self._opBuffer[self._opBufferLen] = data
         self._opBufferLen += 1
 
         if (self._currentOp == self._OpDrawString and
             self._opBufferLen == self._OP_BUFFER_SIZE-1) :
             self._endOp()
+            self._beginOp(self._OpDrawString)
 
     def _endOp(self) :
         if self._currentOp == self._OpDrawString :
-    
+
             self._opBuffer[self._opBufferLen] = 0
             self._opBufferLen += 1
             dataToSend = [x for x in self._opBuffer[:self._opBufferLen]]
@@ -714,27 +813,37 @@ class Display(ModuloBase) :
         self._endOp()
         self._waitOnRefresh()
 
-        self._sendOp([self._OpSetLineColor, int(r*255), int(g*255), int(b*255), int(a*255)])
+        r,g,b,a = [int(255*_clip(x,0,1)) for x in (r,g,b,a)]
+
+        self._sendOp([self._OpSetLineColor, r, g, b, a])
 
     def setFillColor(self, r, g, b, a=1) :
         """Set the current fill color"""
         self._endOp()
         self._waitOnRefresh()
 
-        self._sendOp([self._OpSetFillColor, int(r*255), int(g*255), int(b*255), int(a*255)])
+        r,g,b,a = [int(255*_clip(x,0,1)) for x in (r,g,b,a)]
+
+        self._sendOp([self._OpSetFillColor, r, g, b, a])
 
     def setTextColor(self, r, g, b, a=1) :
         """Set the current text color"""
         self._endOp()
         self._waitOnRefresh()
 
-        self._sendOp([self._OpSetTextColor, int(r*255), int(g*255), int(b*255), int(a*255)])
-    
+        r,g,b,a = [int(255*_clip(x,0,1)) for x in (r,g,b,a)]
+
+        self._sendOp([self._OpSetTextColor, r, g, b, a])
+
     def setCursor(self, x, y) :
         """Set the cursor position, which is where the next text will be drawn."""
         self._endOp()
         self._waitOnRefresh()
-    
+
+        # Convert to 8 bit two's complement representation
+        x = ctypes.c_ubyte(int(x)).value
+        y = ctypes.c_ubyte(int(y)).value
+
         self._sendOp([self._OpSetCursor, x, y])
 
     def refresh(self, flip=False) :
@@ -746,49 +855,103 @@ class Display(ModuloBase) :
 
         self._sendOp([self._OpRefresh, flip])
         self._isRefreshing = True
-    
+
     def fillScreen(self, r, g, b) :
         """Fill the screen"""
         self._endOp()
         self._waitOnRefresh()
 
-        self._sendOp([self._OpFillScreen, int(255*r), int(255*g), int(255*b), 255])
+        r,g,b = [int(255*_clip(x,0,1)) for x in (r,g,b)]
+
+        self._sendOp([self._OpFillScreen, r, g, b, 255])
 
     def drawLine(self, x0, y0, x1, y1) :
-        """Draw a line segment from (x0,y0) to (x1,y1)"""
+        """Draw a line segment from (x0,y0) to (x1,y1)
+
+           All values must be between -127 and 128.
+        """
         self._endOp();
         self._waitOnRefresh();
 
-        ## XXX: _clipLine(&x0, &y0, &x1, &y1);
+        # XXX: Need to add proper line clipping implementation
+
+        # Convert to 8 bit two's complement representation
+        x0 = ctypes.c_ubyte(int(x0)).value
+        y0 = ctypes.c_ubyte(int(y0)).value
+        x1 = ctypes.c_ubyte(int(x1)).value
+        y1 = ctypes.c_ubyte(int(y1)).value
 
         self._sendOp([self._OpDrawLine, x0, y0, x1, y1])
 
     def drawRect(self, x, y, w, h, r=0) :
         """Draw a rectangle with the upper left corner at (x,y) and the
-           specified width, height, and corner radius."""
-        self._endOp()    
+           specified width, height, and corner radius.
+        """
+        self._endOp()
         self._waitOnRefresh();
 
-        # XXX: clip
+        # Helper function which clips a dimension (pos and length) of a rect
+        def _clipRange(x, w, maxWidth) :
+            # Clip the left side to -127.
+            # To support rounded rects we don't clip to 0
+            left = -128
+            if (x < left) :
+                w += x-left
+                x = left
+
+            # Return (0, 0) if the rect is offscreen
+            if (w <= 0) or (x >= maxWidth):
+                return 0,0
+
+            if w > 255:
+                w = 255
+
+            # Convert x to 8 bit two's complement representation
+            x = ctypes.c_ubyte(int(x)).value
+
+            return x, int(w)
+
+        x, w = _clipRange(x, w, self.width)
+        y, h = _clipRange(y, h, self.height)
+        r = int(r)
 
         self._sendOp([self._OpDrawRect, x, y, w, h, r])
 
-    def drawTriangele(self, x0, y0, x1, y1, x2, y2) :
-        """Draw a triangle"""
+    def drawTriangle(self, x0, y0, x1, y1, x2, y2) :
+        """Draw a triangle.
+
+           Values must be between -128 and 127."""
         self._endOp()
         self._waitOnRefresh();
+
+        # Convert to 8 bit two's complement representation
+        x0 = ctypes.c_ubyte(int(x0)).value
+        y0 = ctypes.c_ubyte(int(y0)).value
+        x1 = ctypes.c_ubyte(int(x1)).value
+        y1 = ctypes.c_ubyte(int(y1)).value
+        x2 = ctypes.c_ubyte(int(x2)).value
+        y2 = ctypes.c_ubyte(int(y2)).value
 
         self._sendOp([self._OpDrawTriangle, x0, y0, x1, y1, x2, y2])
 
     def drawCircle(self, x, y, radius) :
-        """ Draw a circle centered at (x,y) with the specified radius"""
+        """ Draw a circle centered at (x,y) with the specified radius.
+
+            x and y must be between -128 and 127.
+            radius must be between 0 and 255
+        """
         self._endOp()
         self._waitOnRefresh();
 
-        self._sendOp([self._OpDrawCircle, x, y, radius])        
+        # Convert to 8 bit two's complement representation
+        x = ctypes.c_ubyte(int(x)).value
+        y = ctypes.c_ubyte(int(y)).value
+        radius = int(radius)
+
+        self._sendOp([self._OpDrawCircle, x, y, radius])
 
     def write(self, s) :
-        """ Write a single charachter c. You can also print to the display with
+        """ Write a string s. You can also print to the display with
             print >>display,"Hello Modulo" (Python 2) or
             print("Hello Modulo", file=display) (Python 3)"""
         self._waitOnRefresh();
@@ -798,8 +961,8 @@ class Display(ModuloBase) :
             self._beginOp(self._OpDrawString)
 
         for c in s :
-            self._appendToOp(c)
-        
+            self._appendToOp(ord(c))
+
     def setTextSize(self, size) :
         """Set the text size. This is a multiplier of the base text size,
            which is 8px high."""
@@ -810,8 +973,8 @@ class Display(ModuloBase) :
 
     def isComplete(self) :
         """ Return whether all previous drawing operations have been completed."""
-        retVal = self.transfer(self._FUNCTION_IS_COMPLETE, [], 1)
-        return retval is not None and retval[0]
+        retval = self.transfer(self._FUNCTION_IS_COMPLETE, [], 1)
+        return retval and retval[0]
 
     def isEmpty(self) :
         """Return whether the queue of drawing operations is empty. If the display
@@ -850,8 +1013,8 @@ class Display(ModuloBase) :
 
         self.setFillColor(1, 1, 1)
 
-        self.drawLogo(self.width()/2-18, 10, 35, 26)
-    
+        self.drawLogo(self.width/2-18, 10, 35, 26)
+
 
     def drawLogo(self, x, y, width, height):
         """Draw the Modulo logo"""
@@ -869,18 +1032,39 @@ class Display(ModuloBase) :
         """Set the display's master current. Higher current values produce a
             brighter, more vivid image but may increase image burn-in and audible
             noise from the OLED driver. The default is .75."""
-        
+
+        current = int(15*_clip(current,0,1))
+
+        # we must wait until no drawing operations are still in progress.
+        while not self.isComplete() :
+            import time
+            time.sleep(.005)
+
+        self.transfer(self._FUNCTION_SET_CURRENT, [current], 0)
+
 
     def setContrast(self, r, g, b) :
         """Set the per channel contrast values, which affect image brightness and
            color balance. The default is (.93, 0.555, 1.0)."""
+
+        contrast = [int(255*_clip(r,0,1)),
+                    int(255*_clip(g,0,1)),
+                    int(255*_clip(b,0,1))]
+
+
+        # we must wait until no drawing operations are still in progress.
+        while not self.isComplete() :
+            import time
+            time.sleep(.005)
+
+        self.transfer(self._FUNCTION_SET_CONTRAST,  contrast, 0)
 
 
     def _processEvent(self, eventCode, eventData) :
         if eventCode == self._EVENT_BUTTON_CHANGED :
             buttonPressed = eventData >> 8
             buttonReleased = eventData & 0xFF
-    
+
             self._buttonState |= buttonPressed
             self._buttonState &= buttonReleased
 
